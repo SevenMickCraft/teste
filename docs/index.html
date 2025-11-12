@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Uso de Codespace</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#f6f8fa; color:#0b0f13; padding:24px; }
+    .card { background:white; border-radius:8px; padding:20px; max-width:520px; margin:0 auto; box-shadow:0 6px 18px rgba(11,15,19,0.06); }
+    h1 { font-size:20px; margin:0 0 12px 0; }
+    .value { font-size:36px; font-weight:700; margin:8px 0; color:#0366d6; }
+    .muted { color:#6a737d; font-size:13px; }
+    .row { display:flex; gap:8px; margin-top:12px; }
+    button { background:#2ea44f; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600; }
+    button.secondary { background:#0366d6; }
+    button.ghost { background:transparent; color:#0366d6; border:1px solid #dfe7f3; }
+    input[type="number"], input[type="text"] { padding:8px; border-radius:6px; border:1px solid #d1d5da; width:100%; }
+    .controls { display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center; margin-top:12px; }
+    label { font-size:13px; color:#444; }
+    small { color:#586069; display:block; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div class="card" role="main">
+    <h1>Uso do Codespace</h1>
+    <div class="muted">Horas utilizadas do Codespace (armazenamento local)</div>
+    <div id="hours" class="value">0h</div>
+    <div class="muted" id="last-updated"></div>
+
+    <div class="controls" style="margin-top:16px;">
+      <input id="increment" type="number" min="1" value="1" aria-label="Horas para adicionar" />
+      <button id="addBtn">Atualizar horas (simular)</button>
+    </div>
+    <small>O botão acima simula o uso e salva o total no armazenamento local do navegador.</small>
+
+    <div style="margin-top:14px;">
+      <label for="codespaceUrl">URL do Codespace (opcional)</label>
+      <div class="row" style="margin-top:8px;">
+        <input id="codespaceUrl" type="text" placeholder="https://github.com/codespaces/new?repo=owner/repo" />
+        <button id="openBtn" class="secondary">Acionar Codespace</button>
+      </div>
+      <small>Se você fornecer uma URL válida, o botão "Acionar Codespace" abrirá a URL em nova aba.</small>
+    </div>
+
+    <hr style="margin:18px 0;border:none;border-top:1px solid #e1e4e8" />
+
+    <div>
+      <label>Buscar horas de uma API (opcional)</label>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <input id="apiUrl" type="text" placeholder="Endpoint (ex.: https://api.exemplo.com/codespace/usage)" />
+        <button id="fetchApi" class="ghost">Buscar</button>
+      </div>
+      <small>Observação: para integrar com a API do GitHub você precisará de um token e usar o endpoint correto de Codespaces; implemente a autenticação no fetch onde indicado no código.</small>
+    </div>
+  </div>
+
+  <script>
+    // Chave usada no localStorage
+    const STORAGE_KEY = 'codespace_hours_v1';
+
+    // Elementos
+    const hoursEl = document.getElementById('hours');
+    const lastUpdatedEl = document.getElementById('last-updated');
+    const incrementEl = document.getElementById('increment');
+    const addBtn = document.getElementById('addBtn');
+    const codespaceUrlEl = document.getElementById('codespaceUrl');
+    const openBtn = document.getElementById('openBtn');
+    const apiUrlEl = document.getElementById('apiUrl');
+    const fetchApiBtn = document.getElementById('fetchApi');
+
+    function readState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return { hours: 0, updatedAt: null };
+        return JSON.parse(raw);
+      } catch (e) {
+        return { hours: 0, updatedAt: null };
+      }
+    }
+
+    function writeState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      render();
+    }
+
+    function render() {
+      const state = readState();
+      hoursEl.textContent = state.hours + 'h';
+      lastUpdatedEl.textContent = state.updatedAt ? 'Última atualização: ' + new Date(state.updatedAt).toLocaleString() : '';
+    }
+
+    // Inicializa
+    (function init() {
+      // Se não existir, inicializa com 0
+      const s = readState();
+      if (!s || typeof s.hours !== 'number') {
+        writeState({ hours: 0, updatedAt: new Date().toISOString() });
+      } else {
+        render();
+      }
+    })();
+
+    // Simula atualização das horas (incremento)
+    addBtn.addEventListener('click', () => {
+      const add = Number(incrementEl.value) || 0;
+      if (add <= 0) {
+        alert('Informe um número positivo de horas para adicionar.');
+        return;
+      }
+      const s = readState();
+      const novo = { hours: s.hours + add, updatedAt: new Date().toISOString() };
+      writeState(novo);
+    });
+
+    // Abre (aciona) o Codespace via URL (nova aba)
+    openBtn.addEventListener('click', () => {
+      const url = codespaceUrlEl.value.trim();
+      if (!url) {
+        alert('Cole a URL do Codespace para abri-lo (ex.: https://github.com/codespaces/new?repo=owner/repo).');
+        return;
+      }
+      try {
+        // Abre em nova aba para "acionar" o codespace
+        window.open(url, '_blank', 'noopener');
+      } catch (e) {
+        alert('Não foi possível abrir a URL informada.');
+      }
+    });
+
+    // Buscar horas a partir de uma API externa (opcional)
+    fetchApiBtn.addEventListener('click', async () => {
+      const url = apiUrlEl.value.trim();
+      if (!url) {
+        alert('Informe o endpoint da API para buscar as horas.');
+        return;
+      }
+
+      try {
+        // Se a API exigir autenticação (ex.: GitHub), adicione um header Authorization:
+        // headers: { "Authorization": "Bearer SEU_TOKEN_AQUI" }
+        const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) throw new Error('Resposta da API: ' + res.status);
+        const data = await res.json();
+
+        // Espera-se que a API retorne algo como { hours: 12 } — ajuste conforme sua API.
+        if (typeof data.hours === 'number') {
+          writeState({ hours: data.hours, updatedAt: new Date().toISOString() });
+        } else {
+          alert('Resposta da API não contém um campo "hours" numérico. Verifique o formato retornado.');
+          console.log('Resposta API:', data);
+        }
+      } catch (err) {
+        alert('Erro ao buscar da API: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Uso de Codespace</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#f6f8fa; color:#0b0f13; padding:24px; }
+    .card { background:white; border-radius:8px; padding:20px; max-width:520px; margin:0 auto; box-shadow:0 6px 18px rgba(11,15,19,0.06); }
+    h1 { font-size:20px; margin:0 0 12px 0; }
+    .value { font-size:36px; font-weight:700; margin:8px 0; color:#0366d6; }
+    .muted { color:#6a737d; font-size:13px; }
+    .row { display:flex; gap:8px; margin-top:12px; }
+    button { background:#2ea44f; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:600; }
+    button.secondary { background:#0366d6; }
+    button.ghost { background:transparent; color:#0366d6; border:1px solid #dfe7f3; }
+    input[type="number"], input[type="text"] { padding:8px; border-radius:6px; border:1px solid #d1d5da; width:100%; }
+    .controls { display:grid; grid-template-columns: 1fr auto; gap:8px; align-items:center; margin-top:12px; }
+    label { font-size:13px; color:#444; }
+    small { color:#586069; display:block; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div class="card" role="main">
+    <h1>Uso do Codespace</h1>
+    <div class="muted">Horas utilizadas do Codespace (armazenamento local)</div>
+    <div id="hours" class="value">0h</div>
+    <div class="muted" id="last-updated"></div>
+
+    <div class="controls" style="margin-top:16px;">
+      <input id="increment" type="number" min="1" value="1" aria-label="Horas para adicionar" />
+      <button id="addBtn">Atualizar horas (simular)</button>
+    </div>
+    <small>O botão acima simula o uso e salva o total no armazenamento local do navegador.</small>
+
+    <div style="margin-top:14px;">
+      <label for="codespaceUrl">URL do Codespace (opcional)</label>
+      <div class="row" style="margin-top:8px;">
+        <input id="codespaceUrl" type="text" placeholder="https://github.com/codespaces/new?repo=owner/repo" />
+        <button id="openBtn" class="secondary">Acionar Codespace</button>
+      </div>
+      <small>Se você fornecer uma URL válida, o botão "Acionar Codespace" abrirá a URL em nova aba.</small>
+    </div>
+
+    <hr style="margin:18px 0;border:none;border-top:1px solid #e1e4e8" />
+
+    <div>
+      <label>Buscar horas de uma API (opcional)</label>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <input id="apiUrl" type="text" placeholder="Endpoint (ex.: https://api.exemplo.com/codespace/usage)" />
+        <button id="fetchApi" class="ghost">Buscar</button>
+      </div>
+      <small>Observação: para integrar com a API do GitHub você precisará de um token e usar o endpoint correto de Codespaces; implemente a autenticação no fetch onde indicado no código.</small>
+    </div>
+  </div>
+
+  <script>
+    // Chave usada no localStorage
+    const STORAGE_KEY = 'codespace_hours_v1';
+
+    // Elementos
+    const hoursEl = document.getElementById('hours');
+    const lastUpdatedEl = document.getElementById('last-updated');
+    const incrementEl = document.getElementById('increment');
+    const addBtn = document.getElementById('addBtn');
+    const codespaceUrlEl = document.getElementById('codespaceUrl');
+    const openBtn = document.getElementById('openBtn');
+    const apiUrlEl = document.getElementById('apiUrl');
+    const fetchApiBtn = document.getElementById('fetchApi');
+
+    function readState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return { hours: 0, updatedAt: null };
+        return JSON.parse(raw);
+      } catch (e) {
+        return { hours: 0, updatedAt: null };
+      }
+    }
+
+    function writeState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      render();
+    }
+
+    function render() {
+      const state = readState();
+      hoursEl.textContent = state.hours + 'h';
+      lastUpdatedEl.textContent = state.updatedAt ? 'Última atualização: ' + new Date(state.updatedAt).toLocaleString() : '';
+    }
+
+    // Inicializa
+    (function init() {
+      // Se não existir, inicializa com 0
+      const s = readState();
+      if (!s || typeof s.hours !== 'number') {
+        writeState({ hours: 0, updatedAt: new Date().toISOString() });
+      } else {
+        render();
+      }
+    })();
+
+    // Simula atualização das horas (incremento)
+    addBtn.addEventListener('click', () => {
+      const add = Number(incrementEl.value) || 0;
+      if (add <= 0) {
+        alert('Informe um número positivo de horas para adicionar.');
+        return;
+      }
+      const s = readState();
+      const novo = { hours: s.hours + add, updatedAt: new Date().toISOString() };
+      writeState(novo);
+    });
+
+    // Abre (aciona) o Codespace via URL (nova aba)
+    openBtn.addEventListener('click', () => {
+      const url = codespaceUrlEl.value.trim();
+      if (!url) {
+        alert('Cole a URL do Codespace para abri-lo (ex.: https://github.com/codespaces/new?repo=owner/repo).');
+        return;
+      }
+      try {
+        // Abre em nova aba para "acionar" o codespace
+        window.open(url, '_blank', 'noopener');
+      } catch (e) {
+        alert('Não foi possível abrir a URL informada.');
+      }
+    });
+
+    // Buscar horas a partir de uma API externa (opcional)
+    fetchApiBtn.addEventListener('click', async () => {
+      const url = apiUrlEl.value.trim();
+      if (!url) {
+        alert('Informe o endpoint da API para buscar as horas.');
+        return;
+      }
+
+      try {
+        // Se a API exigir autenticação (ex.: GitHub), adicione um header Authorization:
+        // headers: { "Authorization": "Bearer SEU_TOKEN_AQUI" }
+        const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) throw new Error('Resposta da API: ' + res.status);
+        const data = await res.json();
+
+        // Espera-se que a API retorne algo como { hours: 12 } — ajuste conforme sua API.
+        if (typeof data.hours === 'number') {
+          writeState({ hours: data.hours, updatedAt: new Date().toISOString() });
+        } else {
+          alert('Resposta da API não contém um campo "hours" numérico. Verifique o formato retornado.');
+          console.log('Resposta API:', data);
+        }
+      } catch (err) {
+        alert('Erro ao buscar da API: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>
